@@ -58,10 +58,8 @@ function injectCSS() {
   style.id = styleId;
   style.textContent = css;
   document.head.appendChild(style);
-  console.log("DEBUG: CSS Injected"); // DEBUG
 }
 
-console.log("DEBUG: Attempting to inject CSS..."); // DEBUG
 injectCSS();
 
 // --- Site Detection (T1.2) ---
@@ -80,27 +78,18 @@ function detectSite() {
 
 // Debounce timer for processing moves
 let debounceTimer = null;
-const DEBOUNCE_DELAY_MS = 150;
+const DEBOUNCE_DELAY_MS = 50;
 
 // --- Mutation Observer Callback (T1.5 / T1.6) ---
 function handleMoveListMutation(mutationsList, observer, siteSelectors) {
-  console.log("MutationObserver Callback Fired!"); // DEBUG
   for (const mutation of mutationsList) {
     if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
-      console.log("Detected added nodes:", mutation.addedNodes); // DEBUG
       mutation.addedNodes.forEach((node) => {
         // Check if the added node itself is a move or contains a move node
         if (node.nodeType === Node.ELEMENT_NODE) {
-          console.log("Processing node:", node); // DEBUG
           let moveElement = null;
           if (node.matches(siteSelectors.moveNode)) {
-            console.log("Node itself matches moveNode selector"); // DEBUG
             moveElement = node;
-          } else {
-            moveElement = node.querySelector(siteSelectors.moveNode);
-            if (moveElement) {
-              console.log("Found moveNode within node:", moveElement); // DEBUG
-            }
           }
 
           if (moveElement) {
@@ -111,7 +100,6 @@ function handleMoveListMutation(mutationsList, observer, siteSelectors) {
             if (sanData) {
               // If data-san exists, trust it as the primary source
               san = sanData;
-              console.log(`DEBUG: Using sanData: [${san}]`); // DEBUG
             } else {
               // data-san not found, try to reconstruct from icon + text
               const pieceIconElement = moveElement.querySelector(
@@ -141,48 +129,21 @@ function handleMoveListMutation(mutationsList, observer, siteSelectors) {
                 }
               });
 
-              if (pieceIconElement) {
-                console.log(
-                  `DEBUG: Found piece icon, letter: [${pieceLetter}]`
-                ); // DEBUG
-              }
-              if (textPart) {
-                console.log(`DEBUG: Found text part: [${textPart}]`); // DEBUG
-              }
-
               if (textPart) {
                 // Only construct if we have the text part
                 san = pieceLetter + textPart;
-                console.log(
-                  `DEBUG: Reconstructed SAN from piece+text: [${san}]`
-                ); // DEBUG
               } else {
-                console.log(
-                  `DEBUG: Could not reconstruct SAN. pieceLetter: [${pieceLetter}], textPart: [${textPart}]`
-                );
-                // Fallback to raw text content if reconstruction failed
                 const fallbackText = moveElement.textContent.trim();
                 if (fallbackText) {
                   san = fallbackText;
-                  console.log(
-                    `DEBUG: Using raw textContent as fallback SAN: [${san}]`
-                  );
                 }
               }
             }
-
-            console.log(
-              `DEBUG: Final SAN to process: [${san}] from element:`,
-              moveElement
-            ); // DEBUG
 
             if (san) {
               // DEBOUNCE the call to handleNewMove
               clearTimeout(debounceTimer);
               debounceTimer = setTimeout(() => {
-                console.log(
-                  `Chess Notation Helper: Processing debounced move [${san}]`
-                ); // DEBUG
                 handleNewMove(san, siteSelectors);
               }, DEBOUNCE_DELAY_MS);
             }
@@ -197,8 +158,6 @@ function handleMoveListMutation(mutationsList, observer, siteSelectors) {
 let highlightTimeout = null;
 
 function handleNewMove(san, siteSelectors) {
-  console.log(`DEBUG: handleNewMove called with SAN: [${san}]`); // DEBUG
-
   // T2.3: Refined SAN Parsing (including Castling)
   const sanCleaned = san.replace(/[+#=].*$/, ""); // Keep check/mate for display, but remove for parsing destination
   let destinationSquare = "";
@@ -220,17 +179,10 @@ function handleNewMove(san, siteSelectors) {
       } else {
         isWhiteMove = false;
       }
-      console.log(
-        `DEBUG Castling: Determined color based on row structure. Is White: ${isWhiteMove}`
-      );
     } else {
-      console.warn(
-        "DEBUG Castling: Could not reliably determine move color for O-O."
-      );
       return;
     }
     destinationSquare = isWhiteMove ? "g1" : "g8";
-    console.log(`DEBUG: Parsed O-O destination: [${destinationSquare}]`);
   } else if (sanCleaned === "O-O-O") {
     // Castling Queenside (similar logic needed)
     const moveRow =
@@ -249,17 +201,10 @@ function handleNewMove(san, siteSelectors) {
       } else {
         isWhiteMove = false;
       }
-      console.log(
-        `DEBUG Castling: Determined color based on row structure. Is White: ${isWhiteMove}`
-      );
     } else {
-      console.warn(
-        "DEBUG Castling: Could not reliably determine move color for O-O-O."
-      );
       return;
     }
     destinationSquare = isWhiteMove ? "c1" : "c8";
-    console.log(`DEBUG: Parsed O-O-O destination: [${destinationSquare}]`);
   } else if (sanCleaned.length >= 2) {
     // Standard move parsing
     destinationSquare = sanCleaned.slice(-2);
@@ -271,8 +216,6 @@ function handleNewMove(san, siteSelectors) {
     );
     return;
   }
-
-  console.log(`DEBUG: Parsed destinationSquare: [${destinationSquare}]`); // DEBUG
 
   // T1.8: Find Square Element (Chess.com specific for now)
   // Convert algebraic (e.g., 'e4') to numeric ('54') for Chess.com selector
@@ -292,9 +235,7 @@ function handleNewMove(san, siteSelectors) {
   const squareSelectorValue = `${fileIndex}${rankIndex}`;
 
   const squareSelector = siteSelectors.boardSquare(squareSelectorValue);
-  console.log(
-    `DEBUG: Attempting to find BASE square element with selector: [${squareSelector}]`
-  ); // DEBUG
+
   const targetHighlightElement = document.querySelector(squareSelector); // ONLY target the base square
 
   if (!targetHighlightElement) {
@@ -304,38 +245,22 @@ function handleNewMove(san, siteSelectors) {
     return; // Exit if base square not found
   }
 
-  console.log(
-    "DEBUG: Found target BASE square element:",
-    targetHighlightElement
-  ); // DEBUG
-
   // T1.9, T1.10, T1.11: Apply Highlight and Text
   highlightSquare(targetHighlightElement, san);
 }
 
 function highlightSquare(element, san) {
-  console.log(
-    `DEBUG: highlightSquare called for [${san}] on element:`,
-    element
-  ); // DEBUG
-  // Clear previous highlight and text from ANYWHERE in the document
-  console.log(
-    `DEBUG: Clearing previous highlight timeout ID: ${highlightTimeout}`
-  ); // DEBUG
   clearTimeout(highlightTimeout);
 
   // --- Robust Cleanup ---
   const previousHighlights = document.querySelectorAll(`.${HIGHLIGHT_CLASS}`);
   previousHighlights.forEach((el) => {
-    console.log(`DEBUG: Removing highlight class from:`, el);
     el.classList.remove(HIGHLIGHT_CLASS);
   });
   const previousTexts = document.querySelectorAll(`.${TEXT_CLASS}`);
   previousTexts.forEach((textEl) => {
-    console.log(`DEBUG: Removing existing text element:`, textEl);
     textEl.remove();
   });
-  console.log(`DEBUG: Global cleanup finished.`); // DEBUG
 
   // --- Apply new highlight/text ---
   // T1.9: Add highlight class
@@ -348,11 +273,7 @@ function highlightSquare(element, san) {
   element.appendChild(textElement); // Append text to the highlighted square/piece
 
   // T1.11: Set timeout to remove highlight and text simultaneously
-  console.log(
-    `DEBUG: Scheduling removal timeout for ${HIGHLIGHT_DURATION_MS}ms`
-  ); // DEBUG
   highlightTimeout = setTimeout(() => {
-    console.log(`DEBUG: Timeout executing for [${san}] on element:`, element); // DEBUG
     element.classList.remove(HIGHLIGHT_CLASS);
     textElement.remove(); // Remove text immediately with highlight
   }, HIGHLIGHT_DURATION_MS);
@@ -369,17 +290,9 @@ function startObserver(site) {
   const targetNode = document.querySelector(siteSelectors.moveListContainer);
 
   if (!targetNode) {
-    console.log(
-      `Chess Notation Helper: Move list container (${siteSelectors.moveListContainer}) not found yet. Retrying...`
-    );
-    // Retry after a delay, maybe the element hasn't loaded yet
     setTimeout(() => startObserver(site), 2000);
     return;
   }
-
-  console.log(
-    `Chess Notation Helper: Found move list container. Starting observer...`
-  );
 
   const config = { childList: true, subtree: true }; // Watch for added children in the container and its descendants
 
@@ -392,13 +305,10 @@ function startObserver(site) {
 
 // --- Initialization ---
 function initialize() {
-  console.log("DEBUG: Initialize function called"); // DEBUG
   const site = detectSite();
   if (!site) {
     return; // Do nothing if not on a supported site
   }
-
-  console.log(`Chess Notation Helper: Initializing for ${site}...`);
 
   // Start the observer for the detected site
   startObserver(site);
@@ -406,6 +316,4 @@ function initialize() {
   // TODO: Implement Lichess overlay logic (Phase 2)
 }
 
-// Run initialization logic directly
-console.log("DEBUG: Calling initialize directly..."); // DEBUG
 initialize();

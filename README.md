@@ -43,7 +43,6 @@ This extension is built using fundamental web technologies within the Chrome Ext
 ├── background.js         # Background service worker (currently minimal)
 ├── content.js            # Main content script logic
 ├── manifest.json         # Extension manifest file
-├── chess-notation.md     # Project plan and task list
 ├── .gitignore            # Specifies intentionally untracked files
 └── README.md             # This file
 ```

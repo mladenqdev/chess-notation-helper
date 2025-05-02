@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Chess Notation Helper",
+  "version": "0.1.0",
+  "description": "Highlights move notation on the board for Chess.com and Lichess.",
+  "permissions": ["scripting", "activeTab"],
+  "host_permissions": ["*://*.chess.com/*", "*://*.lichess.org/*"],
+  "content_scripts": [
+    {
+      "matches": ["*://*.chess.com/*", "*://*.lichess.org/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "Chess Notation Helper"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

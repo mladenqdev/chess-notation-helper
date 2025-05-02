@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# Node dependencies (if added later)
+node_modules/
+
+# Build output (if added later)
+dist/
+build/
+
+# Editor directories
+.vscode/
+.idea/
+
+# Cursor
+.cursor/
+
+# Project Planning File
+chess-notation.md 

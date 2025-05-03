@@ -118,7 +118,7 @@ function detectSite() {
     console.log("Chess Notation Helper: Detected Chess.com");
     return "chess.com";
   } else if (window.location.hostname.includes("lichess.org")) {
-    console.log("Chess Notation Helper: Detected Lichess (DEBUG)");
+    console.log("Chess Notation Helper: Detected Lichess");
     return "lichess.org";
   } else {
     console.log("Chess Notation Helper: Current site not supported");
@@ -132,11 +132,8 @@ const DEBOUNCE_DELAY_MS = 50;
 
 // --- Mutation Observer Callback (T1.5 / T1.6 / T2.2) ---
 function handleMoveListMutation(mutationsList, observer, siteSelectors) {
-  console.log("DEBUG: handleMoveListMutation CALLED (Lichess specific test)");
   for (const mutation of mutationsList) {
-    console.log("DEBUG: Processing mutation: ", mutation);
     if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
-      console.log("DEBUG: Mutation has added nodes: ", mutation.addedNodes);
       mutation.addedNodes.forEach((node) => {
         // Check if the added node itself is a move or contains a move node
         if (node.nodeType === Node.ELEMENT_NODE) {
@@ -160,8 +157,6 @@ function handleMoveListMutation(mutationsList, observer, siteSelectors) {
             const site = detectSite(); // Detect site again for specific logic
 
             if (site === "chess.com") {
-              console.log("DEBUG: Entering Chess.com SAN extraction");
-              // Chess.com: Prefer data-san, fallback to reconstruction
               const sanData = moveElement.dataset.san;
               if (sanData) {
                 san = sanData;
@@ -198,15 +193,12 @@ function handleMoveListMutation(mutationsList, observer, siteSelectors) {
                 }
               }
             } else if (site === "lichess.org") {
-              console.log("DEBUG: Entering Lichess SAN extraction");
               // Lichess: Use direct textContent of the <kwdb> element
               san = moveElement.textContent.trim();
-              console.log(`DEBUG: Lichess SAN extracted: [${san}]`);
             }
             // --- End Site-Specific SAN Extraction ---
 
             if (san) {
-              console.log(`DEBUG: SAN found [${san}], preparing debounce`);
               clearTimeout(debounceTimer);
               debounceTimer = setTimeout(() => {
                 handleNewMove(san, siteSelectors);
@@ -226,7 +218,6 @@ function createOrGetOverlayGrid(boardContainerElement) {
     return overlayGrid;
   }
 
-  console.log("DEBUG: Creating new overlay grid shell...");
   overlayGrid = document.createElement("div");
   overlayGrid.id = OVERLAY_GRID_ID;
 
@@ -237,9 +228,6 @@ function createOrGetOverlayGrid(boardContainerElement) {
   if (site === "chess.com") {
     // Chess.com: Check for the .flipped class on the board container itself
     isFlipped = boardContainerElement.classList.contains("flipped");
-    console.log(
-      `DEBUG: Board orientation check (Chess.com): boardContainer has 'flipped': ${isFlipped}`
-    );
   } else if (site === "lichess.org") {
     // Lichess: Check for 'orientation-black' on the .cg-wrap element
     const cgWrap = boardContainerElement.querySelector(".cg-wrap");
@@ -251,9 +239,6 @@ function createOrGetOverlayGrid(boardContainerElement) {
     } else {
       isFlipped = cgWrap.classList.contains("orientation-black");
     }
-    console.log(
-      `DEBUG: Board orientation check (Lichess): cg-wrap has 'orientation-black': ${isFlipped}`
-    );
   } else {
     console.warn(
       "Chess Notation Helper: Orientation check not implemented for unknown site."
@@ -281,10 +266,8 @@ function createOrGetOverlayGrid(boardContainerElement) {
   // Append the overlay grid to the board container
   if (getComputedStyle(boardContainerElement).position === "static") {
     boardContainerElement.style.position = "relative";
-    console.log(`DEBUG: Set board container (${site}) to position: relative`); // Added site info
   }
   boardContainerElement.appendChild(overlayGrid);
-  console.log(`DEBUG: Appended overlay grid to board container (${site}).`); // Added site info
   return overlayGrid;
 }
 
@@ -329,7 +312,6 @@ function getComputedMoveNumber(moveListContainer) {
     lastProcessedMoveNumber = currentMoveNumber;
   } // Otherwise, keep the last known move number
 
-  // console.log(`DEBUG: Computed Move Number: ${lastProcessedMoveNumber}`); // Keep commented for now
   return lastProcessedMoveNumber;
 }
 
@@ -352,12 +334,8 @@ function getSideToMove(moveListContainer) {
       }
     });
   }
-  // console.log(`DEBUG: Total valid moves found: ${totalMovesMade}`); // Keep commented for now
-  // If 0 or even number of moves made, it's White's turn (or start). If odd, it's Black's turn.
-  // However, we want the side that *just* moved, so we look at the parity *before* the current move.
-  // If totalMovesMade is 1, White just moved. If 2, Black just moved. If 3, White just moved.
+
   const sideThatMoved = totalMovesMade % 2 !== 0 ? "white" : "black";
-  // console.log(`DEBUG: Side that moved: ${sideThatMoved}`); // Keep commented for now
   return sideThatMoved;
 }
 
@@ -369,16 +347,12 @@ function parseSANForDestinationSquare(san, moveListContainer) {
   if (cleanedSan === "O-O" || cleanedSan === "0-0") {
     // Determine side based on whose move it just was
     const side = getSideToMove(moveListContainer);
-    console.log(
-      `DEBUG: Castling detected (O-O or 0-0). Side that moved: ${side}`
-    ); // Unified log
+
     return side === "white" ? "g1" : "g8";
   }
   if (cleanedSan === "O-O-O" || cleanedSan === "0-0-0") {
     const side = getSideToMove(moveListContainer);
-    console.log(
-      `DEBUG: Castling detected (O-O-O or 0-0-0). Side that moved: ${side}`
-    ); // Unified log
+
     return side === "white" ? "c1" : "c8";
   }
 
@@ -393,7 +367,6 @@ function parseSANForDestinationSquare(san, moveListContainer) {
   // Looks for the file (a-h) and rank (1-8) at the end of the string
   const match = coreMove.match(/([a-h][1-8])$/);
   if (match && match[1]) {
-    // console.log(`DEBUG: Parsed destination square: ${match[1]}`); // Keep commented
     return match[1];
   }
 
@@ -408,8 +381,6 @@ function parseSANForDestinationSquare(san, moveListContainer) {
 let highlightTimeout = null;
 
 function handleNewMove(san, siteSelectors) {
-  console.log(`DEBUG: handleNewMove called with SAN [${san}]`);
-
   const site = detectSite();
   const moveListSelector = SELECTORS[site]?.moveListContainer;
   const moveListContainer = moveListSelector
@@ -430,12 +401,8 @@ function handleNewMove(san, siteSelectors) {
   if (!destinationSquare) {
     return;
   }
-  console.log(
-    `DEBUG: Destination square from parseSANForDestinationSquare: ${destinationSquare}`
-  );
 
   // --- Unified Overlay Grid Logic ---
-  console.log(`DEBUG: handleNewMove using overlay logic for site: ${site}`);
   let targetHighlightElement = null;
 
   const boardContainerSelector = SELECTORS[site]?.boardContainer;
@@ -513,7 +480,6 @@ function highlightSquare(element, san) {
 
 // --- Initialize Observer (T1.5) ---
 function startObserver(site) {
-  console.log(`DEBUG: startObserver called for site: ${site}`);
   const siteSelectors = SELECTORS[site];
   if (!siteSelectors || !siteSelectors.moveListContainer) {
     console.error(`Chess Notation Helper: Missing selectors for ${site}`);
@@ -521,37 +487,26 @@ function startObserver(site) {
   }
 
   const targetNode = document.querySelector(siteSelectors.moveListContainer);
-  console.log(
-    `DEBUG: Attempting to find target node with selector: ${siteSelectors.moveListContainer}`
-  );
+
   if (!targetNode) {
-    console.log(
-      `Chess Notation Helper: Move list container (${siteSelectors.moveListContainer}) not found yet (DEBUG). Retrying...`
-    );
     setTimeout(() => startObserver(site), 2000);
     return;
   }
-  console.log(
-    `Chess Notation Helper: Found move list container (DEBUG):`,
-    targetNode
-  );
+
   const config = { childList: true, subtree: true };
   const observer = new MutationObserver((mutations, obs) => {
     handleMoveListMutation(mutations, obs, siteSelectors);
   });
-  console.log("DEBUG: Calling observer.observe on target node");
+
   observer.observe(targetNode, config);
 }
 
 // --- Initialization ---
 function initialize() {
-  console.log("DEBUG: initialize function called"); // DEBUG
   const site = detectSite();
   if (!site) {
     return; // Do nothing if not on a supported site
   }
-
-  console.log(`Chess Notation Helper: Initializing for ${site}...`); // DEBUG
 
   // Start the observer for the detected site
   startObserver(site);
@@ -559,13 +514,8 @@ function initialize() {
   // TODO: Implement Lichess overlay logic (Phase 2)
 }
 
-console.log("DEBUG: Functions defined. Preparing to initialize...");
-
 try {
   initialize();
-  console.log("DEBUG: initialize() function completed without throwing error.");
 } catch (error) {
   console.error("Chess Notation Helper: ERROR during initialization:", error);
 }
-
-console.log("DEBUG: Content script execution finished (or error caught).");

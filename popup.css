@@ -1,0 +1,31 @@
+body {
+  font-family: sans-serif;
+  padding: 10px;
+  min-width: 250px;
+  text-align: center;
+  margin: 0;
+}
+
+h1 {
+  font-size: 1.5em;
+  margin: 5px 0;
+}
+
+p {
+  font-size: 1em;
+  margin-top: 5px;
+  margin-bottom: 10px;
+}
+
+.coffee-link {
+  margin-top: 15px;
+}
+
+a {
+  color: #007bff;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}

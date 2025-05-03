@@ -7,7 +7,7 @@ A Chrome browser extension designed to help users learn standard algebraic chess
 - **Real-time Move Detection:** Automatically detects when a move is made during a game.
 - **Destination Square Highlighting:** Visually highlights the square where the piece landed.
 - **Notation Display:** Displays the standard algebraic notation (e.g., "Nf3", "exd5", "O-O") directly on the highlighted destination square.
-- **Temporary Feedback:** The highlight and notation appear briefly after the move and then fade out, providing non-intrusive feedback.
+- **Temporary Feedback:** The highlight and notation appear briefly after the move and then fade out, providing non-intrusive visual feedback.
 - **Platform Support:** Works on live game pages for both Chess.com and Lichess.org.
 
 ## Technology & Approach
@@ -31,18 +31,3 @@ This extension is built using fundamental web technologies within the Chrome Ext
 5.  Select the directory containing this repository (the one with `manifest.json`).
 6.  The "Chess Notation Helper" extension should now be installed and active.
 7.  Navigate to a live game on Chess.com or Lichess.org to see it in action.
-
-## Project Structure
-
-```
-/
-├── icons/
-│   ├── icon16.png        # 16x16 icon
-│   ├── icon48.png        # 48x48 icon
-│   └── icon128.png       # 128x128 icon
-├── background.js         # Background service worker (currently minimal)
-├── content.js            # Main content script logic
-├── manifest.json         # Extension manifest file
-├── .gitignore            # Specifies intentionally untracked files
-└── README.md             # This file
-```

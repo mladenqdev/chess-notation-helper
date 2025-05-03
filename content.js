@@ -6,7 +6,7 @@ const SELECTORS = {
     moveListContainer:
       ".mode-swap-move-list-wrapper-component.move-list.chessboard-pkg-move-list-component",
     moveNode: ".main-line-row .node-highlight-content",
-    boardSquare: (square) => `.square-${square}`,
+    boardContainer: "#board-single",
   },
   "lichess.org": {
     moveListContainer: "rm6",
@@ -29,8 +29,10 @@ function injectCSS() {
 
   const css = `
     /* === Chess.com Direct Highlighting === */
+    /* REMOVED - Using unified overlay grid now */
+    /* 
     body .square-wrapper .${HIGHLIGHT_CLASS} {
-      background-color: rgba(255, 255, 255, 0.8) !important; /* Semi-transparent white */
+      background-color: rgba(255, 255, 255, 0.8) !important; 
       z-index: 5 !important; 
       pointer-events: none !important;
     }
@@ -49,12 +51,13 @@ function injectCSS() {
       background-color: transparent !important;
       text-shadow: none !important; 
       padding: 0 !important;
-      z-index: 20 !important; /* Above pieces */
+      z-index: 20 !important; 
       pointer-events: none !important;
       opacity: 1;
     }
+    */
 
-    /* === Lichess Overlay Grid === */
+    /* === Lichess Overlay Grid (NOW UNIFIED FOR BOTH SITES) === */
     #${OVERLAY_GRID_ID} {
       position: absolute !important; /* Needs !important potentially */
       top: 0 !important;
@@ -227,22 +230,35 @@ function createOrGetOverlayGrid(boardContainerElement) {
   overlayGrid = document.createElement("div");
   overlayGrid.id = OVERLAY_GRID_ID;
 
-  // --- Corrected Orientation Check ---
-  // Find the cg-wrap element which contains the orientation class
-  const cgWrap = boardContainerElement.querySelector(".cg-wrap");
-  if (!cgWrap) {
-    console.error(
-      "Chess Notation Helper: Could not find .cg-wrap element for orientation check."
+  // --- Site-Specific Orientation Check ---
+  const site = detectSite();
+  let isFlipped = false;
+
+  if (site === "chess.com") {
+    // Chess.com: Check for the .flipped class on the board container itself
+    isFlipped = boardContainerElement.classList.contains("flipped");
+    console.log(
+      `DEBUG: Board orientation check (Chess.com): boardContainer has 'flipped': ${isFlipped}`
     );
-    // Fallback: assume not flipped if orientation element not found
-    isFlipped = false;
+  } else if (site === "lichess.org") {
+    // Lichess: Check for 'orientation-black' on the .cg-wrap element
+    const cgWrap = boardContainerElement.querySelector(".cg-wrap");
+    if (!cgWrap) {
+      console.error(
+        "Chess Notation Helper: Could not find .cg-wrap element for orientation check (Lichess)."
+      );
+      // Fallback: assume not flipped
+    } else {
+      isFlipped = cgWrap.classList.contains("orientation-black");
+    }
+    console.log(
+      `DEBUG: Board orientation check (Lichess): cg-wrap has 'orientation-black': ${isFlipped}`
+    );
   } else {
-    // Check for 'orientation-black' class to determine if board is flipped
-    isFlipped = cgWrap.classList.contains("orientation-black");
+    console.warn(
+      "Chess Notation Helper: Orientation check not implemented for unknown site."
+    );
   }
-  console.log(
-    `DEBUG: Board orientation check: cg-wrap has 'orientation-black': ${isFlipped}`
-  );
 
   const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
   const ranks = ["1", "2", "3", "4", "5", "6", "7", "8"];
@@ -252,28 +268,23 @@ function createOrGetOverlayGrid(boardContainerElement) {
       const squareDiv = document.createElement("div");
       squareDiv.className = OVERLAY_SQUARE_CLASS;
 
-      // Determine algebraic notation based on orientation
-      // Mapping logic: f=0, r=0 is top-left visually.
-      // If not flipped (White's perspective), top-left is a8.
-      // If flipped (Black's perspective), top-left is h1.
-      const fileIndex = isFlipped ? 7 - f : f; // File index (0-7 corresponds to a-h or h-a)
-      const rankIndex = isFlipped ? r : 7 - r; // Rank index (0-7 corresponds to 1-8 or 8-1)
+      const fileIndex = isFlipped ? 7 - f : f;
+      const rankIndex = isFlipped ? r : 7 - r;
 
       const file = files[fileIndex];
       const rank = ranks[rankIndex];
-      squareDiv.dataset.square = `${file}${rank}`; // Set data attribute for easy selection
+      squareDiv.dataset.square = `${file}${rank}`;
       overlayGrid.appendChild(squareDiv);
     }
   }
 
   // Append the overlay grid to the board container
-  // Ensure the container has relative or absolute positioning
   if (getComputedStyle(boardContainerElement).position === "static") {
     boardContainerElement.style.position = "relative";
-    console.log("DEBUG: Set board container to position: relative");
+    console.log(`DEBUG: Set board container (${site}) to position: relative`); // Added site info
   }
   boardContainerElement.appendChild(overlayGrid);
-  console.log("DEBUG: Appended overlay grid to board container.");
+  console.log(`DEBUG: Appended overlay grid to board container (${site}).`); // Added site info
   return overlayGrid;
 }
 
@@ -399,7 +410,6 @@ let highlightTimeout = null;
 function handleNewMove(san, siteSelectors) {
   console.log(`DEBUG: handleNewMove called with SAN [${san}]`);
 
-  // Get the move list container element for context (needed for castling side detection)
   const site = detectSite();
   const moveListSelector = SELECTORS[site]?.moveListContainer;
   const moveListContainer = moveListSelector
@@ -412,79 +422,55 @@ function handleNewMove(san, siteSelectors) {
     return;
   }
 
-  // --- Centralized Parsing ---
-  // Use parseSANForDestinationSquare for ALL moves, including castling
   const destinationSquare = parseSANForDestinationSquare(
     san,
     moveListContainer
   );
 
   if (!destinationSquare) {
-    // parseSANForDestinationSquare logs warnings if it fails, just return
     return;
   }
   console.log(
     `DEBUG: Destination square from parseSANForDestinationSquare: ${destinationSquare}`
   );
 
-  // Find the target element to highlight (Chess.com direct, Lichess overlay)
-  // const site = detectSite(); // Site already detected above
-  console.log(`DEBUG: handleNewMove detected site: ${site}`);
+  // --- Unified Overlay Grid Logic ---
+  console.log(`DEBUG: handleNewMove using overlay logic for site: ${site}`);
   let targetHighlightElement = null;
 
-  if (site === "chess.com") {
-    console.log("DEBUG: Entering Chess.com highlighting logic");
-    // ... (Chess.com logic remains the same, using destinationSquare) ...
-    const fileChar = destinationSquare.charCodeAt(0);
-    const rankChar = destinationSquare.charCodeAt(1);
-    if (fileChar < 97 || fileChar > 104 || rankChar < 49 || rankChar > 56) {
-      console.warn(
-        `Chess Notation Helper: Invalid destination square parsed: ${destinationSquare}`
-      );
-      return;
-    }
-    const fileIndex = fileChar - 97 + 1;
-    const rankIndex = rankChar - 48;
-    const squareSelectorValue = `${fileIndex}${rankIndex}`;
-    const squareSelector = siteSelectors.boardSquare(squareSelectorValue);
-    targetHighlightElement = document.querySelector(squareSelector);
-  } else if (site === "lichess.org") {
-    console.log("DEBUG: Entering Lichess highlighting logic");
-    const boardContainerElement = document.querySelector(
-      siteSelectors.boardContainer
+  const boardContainerSelector = SELECTORS[site]?.boardContainer;
+  if (!boardContainerSelector) {
+    console.error(
+      `Chess Notation Helper: Missing boardContainer selector for ${site}`
     );
-    if (!boardContainerElement) {
-      console.error(
-        "Chess Notation Helper: Could not find Lichess board container element!"
-      );
-      return;
-    }
-    const overlayGrid = createOrGetOverlayGrid(boardContainerElement);
-    if (!overlayGrid) {
-      console.error(
-        "Chess Notation Helper: Failed to create or get overlay grid!"
-      );
-      return;
-    }
-    const overlaySquareSelector = `.${OVERLAY_SQUARE_CLASS}[data-square="${destinationSquare}"]`;
-    targetHighlightElement = overlayGrid.querySelector(overlaySquareSelector);
-
-    if (targetHighlightElement) {
-      console.log(
-        `DEBUG: Found Lichess overlay square for [${destinationSquare}]:`,
-        targetHighlightElement
-      );
-    } else {
-      console.error(
-        `Could not find overlay square with selector: ${overlaySquareSelector}`
-      );
-      return;
-    }
+    return;
   }
+  const boardContainerElement = document.querySelector(boardContainerSelector);
+  if (!boardContainerElement) {
+    console.error(
+      `Chess Notation Helper: Could not find board container element (${boardContainerSelector}) for ${site}!`
+    );
+    // Attempt to retry finding the board container after a delay? Or just fail.
+    // For now, just fail.
+    return;
+  }
+
+  // Get or create the overlay grid positioned on the board container
+  const overlayGrid = createOrGetOverlayGrid(boardContainerElement);
+  if (!overlayGrid) {
+    console.error(
+      `Chess Notation Helper: Failed to create or get overlay grid for ${site}!`
+    );
+    return;
+  }
+
+  // Find the specific overlay square div using the data attribute
+  const overlaySquareSelector = `.${OVERLAY_SQUARE_CLASS}[data-square="${destinationSquare}"]`;
+  targetHighlightElement = overlayGrid.querySelector(overlaySquareSelector);
 
   if (!targetHighlightElement) {
     console.error(
-      `Chess Notation Helper: Could not find target element for ${destinationSquare} on ${site}. Cannot highlight.`
+      `Could not find overlay square with selector: ${overlaySquareSelector} on site ${site}`
     );
     return;
   }

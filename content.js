@@ -220,20 +220,29 @@ function handleMoveListMutation(mutationsList, observer, siteSelectors) {
 function createOrGetOverlayGrid(boardContainerElement) {
   let overlayGrid = document.getElementById(OVERLAY_GRID_ID);
   if (overlayGrid) {
-    // console.log("DEBUG: Found existing overlay grid."); // Keep commented for now
     return overlayGrid;
   }
 
-  console.log("DEBUG: Creating new overlay grid shell..."); // Changed log
+  console.log("DEBUG: Creating new overlay grid shell...");
   overlayGrid = document.createElement("div");
   overlayGrid.id = OVERLAY_GRID_ID;
 
-  const cgBoard = boardContainerElement.querySelector("cg-board");
-  // Check orientation - Lichess adds 'flipped' class to the board container or cg-board itself
-  const isFlipped =
-    boardContainerElement.classList.contains("flipped") ||
-    (cgBoard && cgBoard.classList.contains("flipped"));
-  console.log(`DEBUG: Board flipped: ${isFlipped}`);
+  // --- Corrected Orientation Check ---
+  // Find the cg-wrap element which contains the orientation class
+  const cgWrap = boardContainerElement.querySelector(".cg-wrap");
+  if (!cgWrap) {
+    console.error(
+      "Chess Notation Helper: Could not find .cg-wrap element for orientation check."
+    );
+    // Fallback: assume not flipped if orientation element not found
+    isFlipped = false;
+  } else {
+    // Check for 'orientation-black' class to determine if board is flipped
+    isFlipped = cgWrap.classList.contains("orientation-black");
+  }
+  console.log(
+    `DEBUG: Board orientation check: cg-wrap has 'orientation-black': ${isFlipped}`
+  );
 
   const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
   const ranks = ["1", "2", "3", "4", "5", "6", "7", "8"];
@@ -244,29 +253,144 @@ function createOrGetOverlayGrid(boardContainerElement) {
       squareDiv.className = OVERLAY_SQUARE_CLASS;
 
       // Determine algebraic notation based on orientation
-      const fileIndex = isFlipped ? 7 - f : f; // Flip file index if board is flipped
-      const rankIndex = isFlipped ? r : 7 - r; // Rank index calculation (remains the same)
+      // Mapping logic: f=0, r=0 is top-left visually.
+      // If not flipped (White's perspective), top-left is a8.
+      // If flipped (Black's perspective), top-left is h1.
+      const fileIndex = isFlipped ? 7 - f : f; // File index (0-7 corresponds to a-h or h-a)
+      const rankIndex = isFlipped ? r : 7 - r; // Rank index (0-7 corresponds to 1-8 or 8-1)
 
       const file = files[fileIndex];
       const rank = ranks[rankIndex];
-      const algebraic = `${file}${rank}`;
-      squareDiv.dataset.square = algebraic;
-
+      squareDiv.dataset.square = `${file}${rank}`; // Set data attribute for easy selection
       overlayGrid.appendChild(squareDiv);
     }
   }
 
-  // --- Finalize Overlay Grid ---
-  // Ensure board container can host the absolutely positioned overlay
+  // Append the overlay grid to the board container
+  // Ensure the container has relative or absolute positioning
   if (getComputedStyle(boardContainerElement).position === "static") {
-    console.log("DEBUG: Setting board container position to relative");
     boardContainerElement.style.position = "relative";
+    console.log("DEBUG: Set board container to position: relative");
   }
-  // Append the fully constructed overlay grid to the board container
   boardContainerElement.appendChild(overlayGrid);
-  console.log("DEBUG: Overlay grid created and appended.");
-
+  console.log("DEBUG: Appended overlay grid to board container.");
   return overlayGrid;
+}
+
+// --- SAN Parsing and Square Identification (T1.7 / T2.3 / T2.5) ---
+// Moved these functions BEFORE handleNewMove to ensure they are defined.
+
+// Store the last move number processed to determine side to move for castling
+let lastProcessedMoveNumber = 0;
+
+function getComputedMoveNumber(moveListContainer) {
+  const site = detectSite();
+  let currentMoveNumber = 0;
+
+  if (site === "chess.com") {
+    // Chess.com: Look for move numbers like '1.', '2.' etc.
+    const moveNumberElements = moveListContainer.querySelectorAll(
+      ".move-element .move-number-component span:first-child"
+    );
+    if (moveNumberElements.length > 0) {
+      const lastMoveNumberText =
+        moveNumberElements[moveNumberElements.length - 1].textContent.trim();
+      currentMoveNumber = parseInt(lastMoveNumberText.replace(".", ""), 10);
+    }
+  } else if (site === "lichess.org") {
+    // Lichess: Moves (<kwdb>) are children of move containers (<kladder> or similar)
+    // Often, the move number is not directly in the <kwdb> but nearby or implied by position
+    // Let's count the number of <kwdb> elements that don't contain '...' (continuation)
+    const moveElements = moveListContainer.querySelectorAll("kwdb:not(:empty)");
+    // Count pairs for full moves, add one if odd (Black just moved)
+    let validMoveElements = 0;
+    moveElements.forEach((el) => {
+      // Simple check: Lichess uses '...' for variations/annotations inside kwdb sometimes
+      if (!el.textContent.includes("...")) {
+        validMoveElements++;
+      }
+    });
+    currentMoveNumber = Math.ceil(validMoveElements / 2);
+  }
+
+  // If we computed a valid move number greater than the last processed, update it
+  if (currentMoveNumber > lastProcessedMoveNumber) {
+    lastProcessedMoveNumber = currentMoveNumber;
+  } // Otherwise, keep the last known move number
+
+  // console.log(`DEBUG: Computed Move Number: ${lastProcessedMoveNumber}`); // Keep commented for now
+  return lastProcessedMoveNumber;
+}
+
+function getSideToMove(moveListContainer) {
+  const site = detectSite();
+  let totalMovesMade = 0;
+
+  if (site === "chess.com") {
+    const moveNodes = moveListContainer.querySelectorAll(
+      SELECTORS["chess.com"].moveNode
+    );
+    totalMovesMade = moveNodes.length;
+  } else if (site === "lichess.org") {
+    const moveElements = moveListContainer.querySelectorAll(
+      SELECTORS["lichess.org"].moveNode + ":not(:empty)"
+    );
+    moveElements.forEach((el) => {
+      if (!el.textContent.includes("...")) {
+        totalMovesMade++;
+      }
+    });
+  }
+  // console.log(`DEBUG: Total valid moves found: ${totalMovesMade}`); // Keep commented for now
+  // If 0 or even number of moves made, it's White's turn (or start). If odd, it's Black's turn.
+  // However, we want the side that *just* moved, so we look at the parity *before* the current move.
+  // If totalMovesMade is 1, White just moved. If 2, Black just moved. If 3, White just moved.
+  const sideThatMoved = totalMovesMade % 2 !== 0 ? "white" : "black";
+  // console.log(`DEBUG: Side that moved: ${sideThatMoved}`); // Keep commented for now
+  return sideThatMoved;
+}
+
+function parseSANForDestinationSquare(san, moveListContainer) {
+  // Remove checks, checkmates, annotations like !, ?
+  const cleanedSan = san.replace(/[+#!?]/g, "").trim();
+
+  // Handle Castling (T1.7)
+  if (cleanedSan === "O-O" || cleanedSan === "0-0") {
+    // Determine side based on whose move it just was
+    const side = getSideToMove(moveListContainer);
+    console.log(
+      `DEBUG: Castling detected (O-O or 0-0). Side that moved: ${side}`
+    ); // Unified log
+    return side === "white" ? "g1" : "g8";
+  }
+  if (cleanedSan === "O-O-O" || cleanedSan === "0-0-0") {
+    const side = getSideToMove(moveListContainer);
+    console.log(
+      `DEBUG: Castling detected (O-O-O or 0-0-0). Side that moved: ${side}`
+    ); // Unified log
+    return side === "white" ? "c1" : "c8";
+  }
+
+  // Handle Pawn Promotion (e.g., e8=Q)
+  let promotionPart = "";
+  let coreMove = cleanedSan;
+  if (cleanedSan.includes("=")) {
+    [coreMove, promotionPart] = cleanedSan.split("=");
+  }
+
+  // Basic Regex for destination square (works for pieces and pawns)
+  // Looks for the file (a-h) and rank (1-8) at the end of the string
+  const match = coreMove.match(/([a-h][1-8])$/);
+  if (match && match[1]) {
+    // console.log(`DEBUG: Parsed destination square: ${match[1]}`); // Keep commented
+    return match[1];
+  }
+
+  // Fallback or further parsing needed? Might happen for complex disambiguation
+  console.warn(
+    `Chess Notation Helper: Could not parse destination square from SAN: ${san}`
+  );
+  return null;
 }
 
 // --- Core Logic: Handle New Move (T1.7 - T1.11 / T2.3 / T2.4) ---
@@ -274,91 +398,58 @@ let highlightTimeout = null;
 
 function handleNewMove(san, siteSelectors) {
   console.log(`DEBUG: handleNewMove called with SAN [${san}]`);
-  // T2.3: Refined SAN Parsing (including Castling)
-  const sanCleaned = san.replace(/[+#=].*$/, ""); // Keep check/mate for display, but remove for parsing destination
-  let destinationSquare = "";
 
-  if (sanCleaned === "O-O") {
-    const moveRow =
-      document.querySelector(".main-line-row.selected") ||
-      document.querySelector(
-        ".main-line-row:has(.node-highlight-content.selected)"
-      ); // Simple guess, might be fragile
-    let isWhiteMove = true;
-    if (
-      moveRow &&
-      moveRow.children.length > 1 &&
-      moveRow.children[1].querySelector(".node-highlight-content")
-    ) {
-      if (moveRow.children[0].textContent.includes("O-O")) {
-        isWhiteMove = true;
-      } else {
-        isWhiteMove = false;
-      }
-    } else {
-      return;
-    }
-    destinationSquare = isWhiteMove ? "g1" : "g8";
-  } else if (sanCleaned === "O-O-O") {
-    // Castling Queenside (similar logic needed)
-    const moveRow =
-      document.querySelector(".main-line-row.selected") ||
-      document.querySelector(
-        ".main-line-row:has(.node-highlight-content.selected)"
-      );
-    let isWhiteMove = true;
-    if (
-      moveRow &&
-      moveRow.children.length > 1 &&
-      moveRow.children[1].querySelector(".node-highlight-content")
-    ) {
-      if (moveRow.children[0].textContent.includes("O-O-O")) {
-        isWhiteMove = true;
-      } else {
-        isWhiteMove = false;
-      }
-    } else {
-      return;
-    }
-    destinationSquare = isWhiteMove ? "c1" : "c8";
-  } else if (sanCleaned.length >= 2) {
-    // Standard move parsing
-    destinationSquare = sanCleaned.slice(-2);
-  }
-
-  if (!destinationSquare || destinationSquare.length !== 2) {
-    console.warn(
-      `Chess Notation Helper: Could not parse destination square from SAN: ${san}`
+  // Get the move list container element for context (needed for castling side detection)
+  const site = detectSite();
+  const moveListSelector = SELECTORS[site]?.moveListContainer;
+  const moveListContainer = moveListSelector
+    ? document.querySelector(moveListSelector)
+    : null;
+  if (!moveListContainer) {
+    console.error(
+      `Chess Notation Helper: Could not find move list container for parsing context on ${site}`
     );
     return;
   }
 
-  // T1.8: Find Square Element (Chess.com specific for now)
-  // Convert algebraic (e.g., 'e4') to numeric ('54') for Chess.com selector
-  const site = detectSite();
+  // --- Centralized Parsing ---
+  // Use parseSANForDestinationSquare for ALL moves, including castling
+  const destinationSquare = parseSANForDestinationSquare(
+    san,
+    moveListContainer
+  );
+
+  if (!destinationSquare) {
+    // parseSANForDestinationSquare logs warnings if it fails, just return
+    return;
+  }
+  console.log(
+    `DEBUG: Destination square from parseSANForDestinationSquare: ${destinationSquare}`
+  );
+
+  // Find the target element to highlight (Chess.com direct, Lichess overlay)
+  // const site = detectSite(); // Site already detected above
   console.log(`DEBUG: handleNewMove detected site: ${site}`);
   let targetHighlightElement = null;
 
   if (site === "chess.com") {
     console.log("DEBUG: Entering Chess.com highlighting logic");
+    // ... (Chess.com logic remains the same, using destinationSquare) ...
     const fileChar = destinationSquare.charCodeAt(0);
     const rankChar = destinationSquare.charCodeAt(1);
-
-    // Ensure it's a valid square notation (a-h, 1-8)
     if (fileChar < 97 || fileChar > 104 || rankChar < 49 || rankChar > 56) {
       console.warn(
         `Chess Notation Helper: Invalid destination square parsed: ${destinationSquare}`
       );
       return;
     }
-
-    const fileIndex = fileChar - 97 + 1; // a=1, b=2, ... h=8
-    const rankIndex = rankChar - 48; // 1=1, 2=2, ... 8=8
+    const fileIndex = fileChar - 97 + 1;
+    const rankIndex = rankChar - 48;
     const squareSelectorValue = `${fileIndex}${rankIndex}`;
     const squareSelector = siteSelectors.boardSquare(squareSelectorValue);
-    targetHighlightElement = document.querySelector(squareSelector); // ONLY target the base square
+    targetHighlightElement = document.querySelector(squareSelector);
   } else if (site === "lichess.org") {
-    console.log("DEBUG: Entering Lichess highlighting logic"); // Updated log
+    console.log("DEBUG: Entering Lichess highlighting logic");
     const boardContainerElement = document.querySelector(
       siteSelectors.boardContainer
     );
@@ -368,7 +459,6 @@ function handleNewMove(san, siteSelectors) {
       );
       return;
     }
-    // Get or create the overlay grid positioned on the board container
     const overlayGrid = createOrGetOverlayGrid(boardContainerElement);
     if (!overlayGrid) {
       console.error(
@@ -376,8 +466,6 @@ function handleNewMove(san, siteSelectors) {
       );
       return;
     }
-
-    // Find the specific overlay square div using the data attribute
     const overlaySquareSelector = `.${OVERLAY_SQUARE_CLASS}[data-square="${destinationSquare}"]`;
     targetHighlightElement = overlayGrid.querySelector(overlaySquareSelector);
 
@@ -387,26 +475,26 @@ function handleNewMove(san, siteSelectors) {
         targetHighlightElement
       );
     } else {
-      // This case should ideally not happen if grid generation is correct
       console.error(
         `Could not find overlay square with selector: ${overlaySquareSelector}`
       );
-      return; // Don't try to highlight if overlay square wasn't found
+      return;
     }
-    // No longer returning here - proceed to highlight the overlay square
   }
 
   if (!targetHighlightElement) {
     console.error(
-      `Chess Notation Helper: Could not find target element for ${destinationSquare} on ${site}. Cannot highlight. (DEBUG)`
+      `Chess Notation Helper: Could not find target element for ${destinationSquare} on ${site}. Cannot highlight.`
     );
-    return; // Exit if target element not found for the site
+    return;
   }
 
-  // T1.9, T1.10, T1.11: Apply Highlight and Text (should now work on overlay square too)
-  highlightSquare(targetHighlightElement, san);
+  // Apply Highlight and Text
+  highlightSquare(targetHighlightElement, san); // Pass original SAN for display
 }
 
+// --- Highlighting Logic (T1.9 / T1.10 / T1.11 / T2.4) ---
+// Moved highlightSquare function definition *after* handleNewMove, just for structure
 function highlightSquare(element, san) {
   clearTimeout(highlightTimeout);
 

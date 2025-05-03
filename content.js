@@ -1,5 +1,19 @@
 console.log("Chess Notation Helper: Content script loaded.");
 
+// --- Site Detection (T1.2) ---
+function detectSite() {
+  if (window.location.hostname.includes("chess.com")) {
+    console.log("Chess Notation Helper: Detected Chess.com");
+    return "chess.com";
+  } else if (window.location.hostname.includes("lichess.org")) {
+    console.log("Chess Notation Helper: Detected Lichess");
+    return "lichess.org";
+  } else {
+    console.log("Chess Notation Helper: Current site not supported");
+    return null;
+  }
+}
+
 // --- Constants for Selectors ---
 const SELECTORS = {
   "chess.com": {
@@ -16,6 +30,7 @@ const SELECTORS = {
 };
 
 // --- Constants ---
+const SITE = detectSite();
 const HIGHLIGHT_CLASS = "notation-helper-highlight";
 const TEXT_CLASS = "notation-helper-text";
 const HIGHLIGHT_DURATION_MS = 2000;
@@ -112,25 +127,11 @@ function injectCSS() {
 
 injectCSS();
 
-// --- Site Detection (T1.2) ---
-function detectSite() {
-  if (window.location.hostname.includes("chess.com")) {
-    console.log("Chess Notation Helper: Detected Chess.com");
-    return "chess.com";
-  } else if (window.location.hostname.includes("lichess.org")) {
-    console.log("Chess Notation Helper: Detected Lichess");
-    return "lichess.org";
-  } else {
-    console.log("Chess Notation Helper: Current site not supported");
-    return null;
-  }
-}
-
 // Debounce timer for processing moves
 let debounceTimer = null;
 const DEBOUNCE_DELAY_MS = 50;
 
-// --- Mutation Observer Callback (T1.5 / T1.6 / T2.2) ---
+// --- Mutation Observer Callback ---
 function handleMoveListMutation(mutationsList, observer, siteSelectors) {
   for (const mutation of mutationsList) {
     if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
@@ -153,10 +154,9 @@ function handleMoveListMutation(mutationsList, observer, siteSelectors) {
 
           if (moveElement) {
             let san = "";
-            // --- Site-Specific SAN Extraction (T1.6 for Chess.com, T2.2 for Lichess) ---
-            const site = detectSite(); // Detect site again for specific logic
+            // --- Site-Specific SAN Extraction ---
 
-            if (site === "chess.com") {
+            if (SITE === "chess.com") {
               const sanData = moveElement.dataset.san;
               if (sanData) {
                 san = sanData;
@@ -192,7 +192,7 @@ function handleMoveListMutation(mutationsList, observer, siteSelectors) {
                   }
                 }
               }
-            } else if (site === "lichess.org") {
+            } else if (SITE === "lichess.org") {
               // Lichess: Use direct textContent of the <kwdb> element
               san = moveElement.textContent.trim();
             }
@@ -211,7 +211,7 @@ function handleMoveListMutation(mutationsList, observer, siteSelectors) {
   }
 }
 
-// --- Lichess Overlay Grid Creation (T2.4) ---
+// --- Lichess Overlay Grid Creation ---
 function createOrGetOverlayGrid(boardContainerElement) {
   let overlayGrid = document.getElementById(OVERLAY_GRID_ID);
   if (overlayGrid) {
@@ -222,13 +222,12 @@ function createOrGetOverlayGrid(boardContainerElement) {
   overlayGrid.id = OVERLAY_GRID_ID;
 
   // --- Site-Specific Orientation Check ---
-  const site = detectSite();
   let isFlipped = false;
 
-  if (site === "chess.com") {
+  if (SITE === "chess.com") {
     // Chess.com: Check for the .flipped class on the board container itself
     isFlipped = boardContainerElement.classList.contains("flipped");
-  } else if (site === "lichess.org") {
+  } else if (SITE === "lichess.org") {
     // Lichess: Check for 'orientation-black' on the .cg-wrap element
     const cgWrap = boardContainerElement.querySelector(".cg-wrap");
     if (!cgWrap) {
@@ -271,17 +270,16 @@ function createOrGetOverlayGrid(boardContainerElement) {
   return overlayGrid;
 }
 
-// --- SAN Parsing and Square Identification (T1.7 / T2.3 / T2.5) ---
+// --- SAN Parsing and Square Identification ---
 // Moved these functions BEFORE handleNewMove to ensure they are defined.
 
 // Store the last move number processed to determine side to move for castling
 let lastProcessedMoveNumber = 0;
 
 function getComputedMoveNumber(moveListContainer) {
-  const site = detectSite();
   let currentMoveNumber = 0;
 
-  if (site === "chess.com") {
+  if (SITE === "chess.com") {
     // Chess.com: Look for move numbers like '1.', '2.' etc.
     const moveNumberElements = moveListContainer.querySelectorAll(
       ".move-element .move-number-component span:first-child"
@@ -291,7 +289,7 @@ function getComputedMoveNumber(moveListContainer) {
         moveNumberElements[moveNumberElements.length - 1].textContent.trim();
       currentMoveNumber = parseInt(lastMoveNumberText.replace(".", ""), 10);
     }
-  } else if (site === "lichess.org") {
+  } else if (SITE === "lichess.org") {
     // Lichess: Moves (<kwdb>) are children of move containers (<kladder> or similar)
     // Often, the move number is not directly in the <kwdb> but nearby or implied by position
     // Let's count the number of <kwdb> elements that don't contain '...' (continuation)
@@ -316,15 +314,14 @@ function getComputedMoveNumber(moveListContainer) {
 }
 
 function getSideToMove(moveListContainer) {
-  const site = detectSite();
   let totalMovesMade = 0;
 
-  if (site === "chess.com") {
+  if (SITE === "chess.com") {
     const moveNodes = moveListContainer.querySelectorAll(
       SELECTORS["chess.com"].moveNode
     );
     totalMovesMade = moveNodes.length;
-  } else if (site === "lichess.org") {
+  } else if (SITE === "lichess.org") {
     const moveElements = moveListContainer.querySelectorAll(
       SELECTORS["lichess.org"].moveNode + ":not(:empty)"
     );
@@ -340,10 +337,9 @@ function getSideToMove(moveListContainer) {
 }
 
 function parseSANForDestinationSquare(san, moveListContainer) {
-  // Remove checks, checkmates, annotations like !, ?
   const cleanedSan = san.replace(/[+#!?]/g, "").trim();
 
-  // Handle Castling (T1.7)
+  // Handle Castling
   if (cleanedSan === "O-O" || cleanedSan === "0-0") {
     // Determine side based on whose move it just was
     const side = getSideToMove(moveListContainer);
@@ -381,14 +377,13 @@ function parseSANForDestinationSquare(san, moveListContainer) {
 let highlightTimeout = null;
 
 function handleNewMove(san, siteSelectors) {
-  const site = detectSite();
-  const moveListSelector = SELECTORS[site]?.moveListContainer;
+  const moveListSelector = SELECTORS[SITE]?.moveListContainer;
   const moveListContainer = moveListSelector
     ? document.querySelector(moveListSelector)
     : null;
   if (!moveListContainer) {
     console.error(
-      `Chess Notation Helper: Could not find move list container for parsing context on ${site}`
+      `Chess Notation Helper: Could not find move list container for parsing context on ${SITE}`
     );
     return;
   }
@@ -405,20 +400,18 @@ function handleNewMove(san, siteSelectors) {
   // --- Unified Overlay Grid Logic ---
   let targetHighlightElement = null;
 
-  const boardContainerSelector = SELECTORS[site]?.boardContainer;
+  const boardContainerSelector = SELECTORS[SITE]?.boardContainer;
   if (!boardContainerSelector) {
     console.error(
-      `Chess Notation Helper: Missing boardContainer selector for ${site}`
+      `Chess Notation Helper: Missing boardContainer selector for ${SITE}`
     );
     return;
   }
   const boardContainerElement = document.querySelector(boardContainerSelector);
   if (!boardContainerElement) {
     console.error(
-      `Chess Notation Helper: Could not find board container element (${boardContainerSelector}) for ${site}!`
+      `Chess Notation Helper: Could not find board container element (${boardContainerSelector}) for ${SITE}!`
     );
-    // Attempt to retry finding the board container after a delay? Or just fail.
-    // For now, just fail.
     return;
   }
 
@@ -426,7 +419,7 @@ function handleNewMove(san, siteSelectors) {
   const overlayGrid = createOrGetOverlayGrid(boardContainerElement);
   if (!overlayGrid) {
     console.error(
-      `Chess Notation Helper: Failed to create or get overlay grid for ${site}!`
+      `Chess Notation Helper: Failed to create or get overlay grid for ${SITE}!`
     );
     return;
   }
@@ -437,7 +430,7 @@ function handleNewMove(san, siteSelectors) {
 
   if (!targetHighlightElement) {
     console.error(
-      `Could not find overlay square with selector: ${overlaySquareSelector} on site ${site}`
+      `Could not find overlay square with selector: ${overlaySquareSelector} on site ${SITE}`
     );
     return;
   }
@@ -446,7 +439,7 @@ function handleNewMove(san, siteSelectors) {
   highlightSquare(targetHighlightElement, san); // Pass original SAN for display
 }
 
-// --- Highlighting Logic (T1.9 / T1.10 / T1.11 / T2.4) ---
+// --- Highlighting Logic ---
 // Moved highlightSquare function definition *after* handleNewMove, just for structure
 function highlightSquare(element, san) {
   clearTimeout(highlightTimeout);
@@ -462,34 +455,32 @@ function highlightSquare(element, san) {
   });
 
   // --- Apply new highlight/text ---
-  // T1.9: Add highlight class
   element.classList.add(HIGHLIGHT_CLASS);
 
-  // T1.10: Create and add text element
   const textElement = document.createElement("div");
   textElement.className = TEXT_CLASS;
   textElement.textContent = san;
   element.appendChild(textElement); // Append text to the highlighted square/piece
 
-  // T1.11: Set timeout to remove highlight and text simultaneously
+  // Set timeout to remove highlight and text simultaneously
   highlightTimeout = setTimeout(() => {
     element.classList.remove(HIGHLIGHT_CLASS);
     textElement.remove(); // Remove text immediately with highlight
   }, HIGHLIGHT_DURATION_MS);
 }
 
-// --- Initialize Observer (T1.5) ---
-function startObserver(site) {
-  const siteSelectors = SELECTORS[site];
+// --- Initialize Observer ---
+function startObserver(SITE) {
+  const siteSelectors = SELECTORS[SITE];
   if (!siteSelectors || !siteSelectors.moveListContainer) {
-    console.error(`Chess Notation Helper: Missing selectors for ${site}`);
+    console.error(`Chess Notation Helper: Missing selectors for ${SITE}`);
     return;
   }
 
   const targetNode = document.querySelector(siteSelectors.moveListContainer);
 
   if (!targetNode) {
-    setTimeout(() => startObserver(site), 2000);
+    setTimeout(() => startObserver(SITE), 2000);
     return;
   }
 
@@ -503,15 +494,12 @@ function startObserver(site) {
 
 // --- Initialization ---
 function initialize() {
-  const site = detectSite();
-  if (!site) {
+  if (!SITE) {
     return; // Do nothing if not on a supported site
   }
 
   // Start the observer for the detected site
-  startObserver(site);
-
-  // TODO: Implement Lichess overlay logic (Phase 2)
+  startObserver(SITE);
 }
 
 try {

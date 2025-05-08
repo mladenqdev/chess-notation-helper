@@ -1,6 +1,4 @@
-console.log("Chess Notation Helper: Content script loaded.");
-
-// --- Site Detection (T1.2) ---
+// --- Site Detection ---
 function detectSite() {
   if (window.location.hostname.includes("chess.com")) {
     console.log("Chess Notation Helper: Detected Chess.com");
@@ -134,79 +132,106 @@ const DEBOUNCE_DELAY_MS = 50;
 // --- Mutation Observer Callback ---
 function handleMoveListMutation(mutationsList, observer, siteSelectors) {
   for (const mutation of mutationsList) {
-    if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
-      mutation.addedNodes.forEach((node) => {
-        // Check if the added node itself is a move or contains a move node
-        if (node.nodeType === Node.ELEMENT_NODE) {
-          let moveElement = null;
-          // Check if the node itself is the move node
-          if (node.matches(siteSelectors.moveNode)) {
-            moveElement = node;
+    if (mutation.type === "childList") {
+      // Check for potential board clear/reset before processing added nodes
+      if (
+        mutation.removedNodes.length > 0 &&
+        mutation.target.children.length < 2
+      ) {
+        const boardContainerSelector = SELECTORS[SITE]?.boardContainer;
+        if (boardContainerSelector) {
+          const boardContainerElement = document.querySelector(
+            boardContainerSelector
+          );
+          if (boardContainerElement) {
+            checkAndUpdateGridOrientation(boardContainerElement);
+          } else {
+            console.warn(
+              "Chess Notation Helper: Board container not found for orientation check after move list clear."
+            );
           }
-          // Lichess sometimes wraps moves, check children
-          else if (node.querySelector(siteSelectors.moveNode)) {
-            moveElement = node.querySelector(siteSelectors.moveNode);
-          }
-          // Chess.com might also wrap the node we need
-          else if (node.querySelector(siteSelectors.moveNode)) {
-            moveElement = node.querySelector(siteSelectors.moveNode);
-          }
+        } else {
+          console.warn(
+            "Chess Notation Helper: Board container selector not defined for orientation check."
+          );
+        }
+      }
 
-          if (moveElement) {
-            let san = "";
-            // --- Site-Specific SAN Extraction ---
+      // Process added nodes for new moves
+      if (mutation.addedNodes.length > 0) {
+        mutation.addedNodes.forEach((node) => {
+          // Check if the added node itself is a move or contains a move node
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            let moveElement = null;
+            // Check if the node itself is the move node
+            if (node.matches(siteSelectors.moveNode)) {
+              moveElement = node;
+            }
+            // Lichess sometimes wraps moves, check children
+            else if (node.querySelector(siteSelectors.moveNode)) {
+              moveElement = node.querySelector(siteSelectors.moveNode);
+            }
+            // Chess.com might also wrap the node we need
+            else if (node.querySelector(siteSelectors.moveNode)) {
+              moveElement = node.querySelector(siteSelectors.moveNode);
+            }
 
-            if (SITE === "chess.com") {
-              const sanData = moveElement.dataset.san;
-              if (sanData) {
-                san = sanData;
-              } else {
-                const pieceIconElement = moveElement.querySelector(
-                  "span[data-figurine]"
-                );
-                const pieceLetter = pieceIconElement
-                  ? pieceIconElement.dataset.figurine || ""
-                  : "";
-                let textPart = "";
-                moveElement.childNodes.forEach((child) => {
-                  if (
-                    child.nodeType === Node.TEXT_NODE &&
-                    child.textContent.trim()
-                  ) {
-                    textPart = child.textContent.trim();
-                  } else if (
-                    child.nodeType === Node.ELEMENT_NODE &&
-                    child.tagName === "SPAN" &&
-                    !child.hasAttribute("data-figurine") &&
-                    child.textContent.trim()
-                  ) {
-                    textPart = child.textContent.trim();
-                  }
-                });
-                if (textPart) {
-                  san = pieceLetter + textPart;
+            if (moveElement) {
+              let san = "";
+              // --- Site-Specific SAN Extraction ---
+
+              if (SITE === "chess.com") {
+                const sanData = moveElement.dataset.san;
+                if (sanData) {
+                  san = sanData;
                 } else {
-                  const fallbackText = moveElement.textContent.trim();
-                  if (fallbackText) {
-                    san = fallbackText;
+                  const pieceIconElement = moveElement.querySelector(
+                    "span[data-figurine]"
+                  );
+                  const pieceLetter = pieceIconElement
+                    ? pieceIconElement.dataset.figurine || ""
+                    : "";
+                  let textPart = "";
+                  moveElement.childNodes.forEach((child) => {
+                    if (
+                      child.nodeType === Node.TEXT_NODE &&
+                      child.textContent.trim()
+                    ) {
+                      textPart = child.textContent.trim();
+                    } else if (
+                      child.nodeType === Node.ELEMENT_NODE &&
+                      child.tagName === "SPAN" &&
+                      !child.hasAttribute("data-figurine") &&
+                      child.textContent.trim()
+                    ) {
+                      textPart = child.textContent.trim();
+                    }
+                  });
+                  if (textPart) {
+                    san = pieceLetter + textPart;
+                  } else {
+                    const fallbackText = moveElement.textContent.trim();
+                    if (fallbackText) {
+                      san = fallbackText;
+                    }
                   }
                 }
+              } else if (SITE === "lichess.org") {
+                // Lichess: Use direct textContent of the <kwdb> element
+                san = moveElement.textContent.trim();
               }
-            } else if (SITE === "lichess.org") {
-              // Lichess: Use direct textContent of the <kwdb> element
-              san = moveElement.textContent.trim();
-            }
-            // --- End Site-Specific SAN Extraction ---
+              // --- End Site-Specific SAN Extraction ---
 
-            if (san) {
-              clearTimeout(debounceTimer);
-              debounceTimer = setTimeout(() => {
-                handleNewMove(san, siteSelectors);
-              }, DEBOUNCE_DELAY_MS);
+              if (san) {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                  handleNewMove(san, siteSelectors);
+                }, DEBOUNCE_DELAY_MS);
+              }
             }
           }
-        }
-      });
+        });
+      }
     }
   }
 }
@@ -244,6 +269,8 @@ function createOrGetOverlayGrid(boardContainerElement) {
     );
   }
 
+  overlayGrid.dataset.initialOrientationIsFlipped = isFlipped.toString();
+
   const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
   const ranks = ["1", "2", "3", "4", "5", "6", "7", "8"];
 
@@ -270,8 +297,65 @@ function createOrGetOverlayGrid(boardContainerElement) {
   return overlayGrid;
 }
 
+// --- Function to Check and Update Grid Orientation ---
+function checkAndUpdateGridOrientation(boardContainerElement) {
+  const overlayGrid = document.getElementById(OVERLAY_GRID_ID);
+  if (!overlayGrid) {
+    return;
+  }
+
+  // 1. Perform current site-specific orientation check
+  let isFlippedNow = false;
+  if (SITE === "chess.com") {
+    isFlippedNow = boardContainerElement.classList.contains("flipped");
+  } else if (SITE === "lichess.org") {
+    const cgWrap = boardContainerElement.querySelector(".cg-wrap");
+    if (cgWrap) {
+      isFlippedNow = cgWrap.classList.contains("orientation-black");
+    } else {
+      console.error(
+        "Chess Notation Helper: Could not find .cg-wrap for current orientation check (Lichess)."
+      );
+      // Can't determine current flip, so can't safely update. Keep existing grid.
+      return;
+    }
+  }
+
+  // 2. Retrieve the orientation the grid was built with
+  const gridWasInitiallyFlipped =
+    overlayGrid.dataset.initialOrientationIsFlipped === "true";
+
+  // 3. If orientation has changed, rebuild the grid squares
+  if (isFlippedNow !== gridWasInitiallyFlipped) {
+    // Clear existing squares
+    overlayGrid.innerHTML = "";
+
+    // Re-populate with new squares based on current orientation
+    const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
+    const ranks = ["1", "2", "3", "4", "5", "6", "7", "8"];
+
+    for (let r = 0; r < 8; r++) {
+      for (let f = 0; f < 8; f++) {
+        const squareDiv = document.createElement("div");
+        squareDiv.className = OVERLAY_SQUARE_CLASS;
+
+        // Use isFlippedNow for correct assignment
+        const fileIndex = isFlippedNow ? 7 - f : f;
+        const rankIndex = isFlippedNow ? r : 7 - r;
+
+        const file = files[fileIndex];
+        const rank = ranks[rankIndex];
+        squareDiv.dataset.square = `${file}${rank}`;
+        overlayGrid.appendChild(squareDiv);
+      }
+    }
+
+    // Update the stored orientation to the new one
+    overlayGrid.dataset.initialOrientationIsFlipped = isFlippedNow.toString();
+  }
+}
+
 // --- SAN Parsing and Square Identification ---
-// Moved these functions BEFORE handleNewMove to ensure they are defined.
 
 // Store the last move number processed to determine side to move for castling
 let lastProcessedMoveNumber = 0;

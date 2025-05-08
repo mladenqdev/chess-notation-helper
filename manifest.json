@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Chess Notation Helper",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Highlights chess squares based on notation input during games on Lichess and Chess.com.",
   "permissions": [],
   "host_permissions": ["*://*.lichess.org/*", "*://*.chess.com/*"],

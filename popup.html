@@ -6,11 +6,24 @@
   </head>
   <body>
     <h1>Chess Notation Helper</h1>
-    <p>
-      This extension helps you learn chess notation by highlighting squares on
-      the board.
-    </p>
+    <p style="margin: 8px 0">Note that it only works for live games.</p>
     <p>Supported sites: Chess.com, Lichess.org</p>
+    <button id="togglePauseButton">Pause</button>
+
+    <div class="setting-container">
+      <label for="durationSelect">Highlight Duration:</label>
+      <select id="durationSelect">
+        <option value="2000">2 seconds</option>
+        <option value="3000">3 seconds</option>
+        <option value="4000">4 seconds</option>
+        <option value="5000">5 seconds</option>
+      </select>
+    </div>
+
+    <p style="font-size: 1em; margin-bottom: 0; margin-top: 15px; color: #555">
+      If you like this extension and it helped you get better with chess
+      notation:
+    </p>
     <div class="coffee-link">
       <a href="https://buymeacoffee.com/mladenq" target="_blank">
         <img

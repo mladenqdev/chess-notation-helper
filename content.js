@@ -31,9 +31,73 @@ const SELECTORS = {
 const SITE = detectSite();
 const HIGHLIGHT_CLASS = "notation-helper-highlight";
 const TEXT_CLASS = "notation-helper-text";
-const HIGHLIGHT_DURATION_MS = 2000;
 const OVERLAY_GRID_ID = "notation-helper-overlay-grid";
 const OVERLAY_SQUARE_CLASS = "notation-helper-overlay-square";
+
+// --- Pause State ---
+let isPaused = false; // Default to not paused
+let currentHighlightDuration = 2000; // Default duration
+
+// Function to request initial settings from background script
+function initializeSettings() {
+  if (chrome.runtime && chrome.runtime.sendMessage) {
+    chrome.runtime.sendMessage(
+      { action: "contentScriptLoaded" },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          // If error, attempt to load from storage directly as a fallback before relying on defaults
+          loadSettingsFromStorage();
+        } else if (response) {
+          isPaused = response.isPaused;
+          currentHighlightDuration = response.duration;
+        } else {
+          loadSettingsFromStorage();
+        }
+      }
+    );
+  } else {
+    loadSettingsFromStorage();
+  }
+}
+
+// Function to load settings directly from storage (used as fallback or primary for robustness)
+function loadSettingsFromStorage() {
+  if (chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get(["isPaused", "highlightDuration"], (result) => {
+      if (chrome.runtime.lastError) {
+        console.error(
+          "CNH: Error loading settings directly from storage:",
+          chrome.runtime.lastError.message
+        );
+        // Defaults will remain if not already set by background message
+      } else {
+        if (typeof result.isPaused === "boolean") isPaused = result.isPaused;
+        if (typeof result.highlightDuration === "number")
+          currentHighlightDuration = result.highlightDuration;
+      }
+    });
+  } else {
+    console.warn("CNH: chrome.storage.local not available for direct load.");
+  }
+}
+
+// Listen for storage changes to keep settings in sync
+if (chrome.storage && chrome.storage.onChanged) {
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === "local") {
+      if (changes.isPaused) {
+        isPaused = changes.isPaused.newValue;
+      }
+      if (changes.highlightDuration) {
+        currentHighlightDuration = changes.highlightDuration.newValue;
+      }
+    }
+  });
+} else {
+  console.warn(
+    "Chess Notation Helper: chrome.storage.onChanged not available for dynamic setting updates."
+  );
+}
 
 // --- CSS for Highlighting (Inject once) ---
 function injectCSS() {
@@ -461,6 +525,10 @@ function parseSANForDestinationSquare(san, moveListContainer) {
 let highlightTimeout = null;
 
 function handleNewMove(san, siteSelectors) {
+  if (isPaused) {
+    return;
+  }
+
   const moveListSelector = SELECTORS[SITE]?.moveListContainer;
   const moveListContainer = moveListSelector
     ? document.querySelector(moveListSelector)
@@ -550,7 +618,7 @@ function highlightSquare(element, san) {
   highlightTimeout = setTimeout(() => {
     element.classList.remove(HIGHLIGHT_CLASS);
     textElement.remove(); // Remove text immediately with highlight
-  }, HIGHLIGHT_DURATION_MS);
+  }, currentHighlightDuration); // Use dynamic duration here
 }
 
 // --- Initialize Observer ---
@@ -579,10 +647,9 @@ function startObserver(SITE) {
 // --- Initialization ---
 function initialize() {
   if (!SITE) {
-    return; // Do nothing if not on a supported site
+    return;
   }
-
-  // Start the observer for the detected site
+  initializeSettings(); // Initialize settings (pause state and duration) on load
   startObserver(SITE);
 }
 
